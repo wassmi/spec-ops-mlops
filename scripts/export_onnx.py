@@ -1,4 +1,5 @@
 import os
+import gc
 import json
 from pathlib import Path
 from optimum.onnxruntime import ORTModelForCausalLM, ORTQuantizer
@@ -56,6 +57,10 @@ def export_and_quantize(folder_name, model_id):
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         model.save_pretrained(model_dir)
         tokenizer.save_pretrained(model_dir)
+        # Clean up model and tokenizer as soon as possible
+        del model
+        del tokenizer
+        gc.collect()
         # Mark export step done
         _mark_done(state, folder_name, "export")
         print(f"[1/3] Export complete: {model_onnx}")
@@ -65,17 +70,27 @@ def export_and_quantize(folder_name, model_id):
         print(f"[SKIP] {model_id} quantize: {quantized_path} exists and state says done.")
     else:
         print(f"[2/3] Quantizing {model_id} (INT8/AVX2)...")
-        quantizer = ORTQuantizer.from_pretrained(model_dir)
-        dqconfig = AutoQuantizationConfig.avx2(is_static=False)
-        quantizer.quantize(
-            save_dir=model_dir,
-            quantization_config=dqconfig,
-        )
-        # Mark quantize step done
-        _mark_done(state, folder_name, "quantize")
+        try:
+            quantizer = ORTQuantizer.from_pretrained(model_dir)
+            dqconfig = AutoQuantizationConfig.avx2(is_static=False)
+            quantizer.quantize(
+                save_dir=model_dir,
+                quantization_config=dqconfig,
+                preprocessor=None,   # Disable memory hungry preprocessing
+            )
+            # Clean up quantizer
+            del quantizer
+            gc.collect()
+            # Mark quantize step done
+            _mark_done(state, folder_name, "quantize")
+        except Exception as e:
+            print(f"[ERROR] Quantization failed for {model_id}: {e}")
+            # Clean up just in case
+            gc.collect()
 
     print(f"[3/3] SUCCESS: {model_id} is ready in {model_dir}")
 
 if __name__ == "__main__":
     for folder, m_id in MODELS:
         export_and_quantize(folder, m_id)
+        gc.collect()
