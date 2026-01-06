@@ -34,7 +34,7 @@ def export_and_quantize(folder_name, model_id):
 
     print(f"[2/3] Quantizing {model_id} (INT8/AVX2)...")
     quantizer = ORTQuantizer.from_pretrained(model_dir)
-    dqconfig = AutoQuantizationConfig.avx2_dynamic()
+    dqconfig = AutoQuantizationConfig.avx2(is_static=False)
     
     # Apply quantization
     quantizer.quantize(
