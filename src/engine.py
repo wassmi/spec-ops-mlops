@@ -13,7 +13,7 @@ class SpeculativeEngine:
 
         # HARDENED SESSION OPTIONS (Optimized for your 4GB/8GB environment)
         sess_options = ort.SessionOptions()
-        sess_options.intra_op_num_threads = 1
+        sess_options.intra_op_num_threads = 2
         sess_options.inter_op_num_threads = 1
         sess_options.enable_mem_pattern = False
 
