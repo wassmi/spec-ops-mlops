@@ -1,20 +1,16 @@
-# Spec-Ops: Speculative Decoding API
+# Spec-Ops: Speculative Decoding API 🚀
 
-A high-performance LLM inference engine using ONNX Runtime and Speculative Decoding to achieve 8+ TPS on CPU-only environments.
+A high-performance LLM inference engine using ONNX Runtime and Speculative Decoding to achieve **8.19 TPS** on standard CPU environments.
 
-## 🚀 Quick Start
-1. **Clone with LFS:** `git clone https://github.com/your-username/spec-ops-mlops.git`
-2. **Build:** `docker build -t spec-ops-api .`
-3. **Run:** `docker run -p 8000:8000 spec-ops-api`
-
-## 📊 Performance Benchmarks (GitHub Cloud)
+## 📊 Performance Benchmark
+- **Environment:** GitHub Actions Runner (Standard Ubuntu)
 - **Engine:** ONNX Runtime (CPU)
-- **Optimization:** 4-bit Quantization
-- **Strategy:** Speculative Decoding (k=1)
-- **Result:** **8.19 Tokens Per Second** (Verified via GitHub Actions)
+- **Result:** **8.19 Tokens Per Second** (Verified Jan 2026)
 
-## 🛠️ CI/CD Pipeline
-Our automated pipeline ensures:
-- **Linting:** Black (Code Style)
-- **Security:** Bandit (Vulnerability Scanning)
-- **Smoke Test:** Performance gate > 2.0 TPS
+## 🗺️ Project Roadmap
+- **Phase 1-3:** [DONE] Engine, Docker, and CI/CD Pipeline.
+- **Phase 4:** [IN PROGRESS] Migrating models to Hugging Face Model Registry.
+- **Phase 5:** [UPCOMING] Kubernetes deployment and scaling.
+
+## 🛠️ Stack
+Python, ONNX, Docker, GitHub Actions.
