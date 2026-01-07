@@ -30,7 +30,11 @@ jobs:
     needs: quality-gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Fix: Download actual LFS files so ONNX doesn't crash on "pointers"
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -39,7 +43,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          load: true # CRITICAL: This loads the image into the local Docker daemon
+          load: true # Loads image into local Docker daemon for the smoke test
           tags: spec-ops-api:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -54,17 +58,17 @@ jobs:
           sleep 30 
 
           # 3. Benchmark Request
-          # jq -r '.tokens_per_second // 0.0' handles 'null' if API isn't ready
           RESPONSE=$(curl -s -X POST http://localhost:8000/generate \
             -H "Content-Type: application/json" \
             -d '{"prompt": "The future of AI is", "k_draft": 1, "max_new_tokens": 10}')
           
           echo "Raw API Response: $RESPONSE"
           
+          # Extract TPS, default to 0.0 if field is missing or null
           TPS=$(echo $RESPONSE | jq -r '.tokens_per_second // 0.0')
           echo "📊 CI Benchmark Result: $TPS TPS"
 
-          # 4. Performance Gate (Using bc for decimal comparison)
+          # 4. Performance Gate
           if (( $(echo "$TPS < 2.0" | bc -l) )); then
             echo "❌ FAILURE: TPS ($TPS) is below threshold or API timed out."
             echo "--- DOCKER LOGS ---"
