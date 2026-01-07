@@ -1,82 +1,62 @@
-import time
 import os
-import onnxruntime as ort
+import time
 import numpy as np
-import gc
+import onnxruntime as ort
+from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 from src.metrics import SessionMetrics
 
-
 class SpeculativeEngine:
     def __init__(self, tokenizer_id, repo_id="wassmi/spec-ops-phi3-onnx"):
-        
-        self.target_path = "models/target/model_quantized.onnx"
+        # 1. Path Setup
+        self.target_path = os.path.join(os.getcwd(), "models/target/model_quantized.onnx")
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_id, 
+            revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+        )
+
+        # 2. Registry Check (The CI Fix)
         if not os.path.exists(self.target_path):
-            print(f"📥 Model not found at {self.target_path}. Pulling from Registry...")
+            print(f"📥 [REGISTRY] Weights missing. Downloading from {repo_id}...")
             os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
             hf_hub_download(
                 repo_id=repo_id,
                 filename="model_quantized.onnx",
-                local_dir="models/target",
-                revision="main" # or your specific branch
+                local_dir=os.path.dirname(self.target_path),
+                local_dir_use_symlinks=False
             )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_id, revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6"
-        )
+            print("✅ [REGISTRY] Download complete.")
 
-        # --- THE ULTIMATE STABILITY OPTIONS ---
+        # 3. Hardened Session Options (Phase 4 Stability)
         sess_options = ort.SessionOptions()
         sess_options.intra_op_num_threads = 1
         sess_options.inter_op_num_threads = 1
-
-        # Disable the Memory Arena (This stops the 'Killed' spike)
         sess_options.add_session_config_entry("session.enable_cpu_mem_arena", "0")
-
-        # Use Memory Mapping for the weights
         sess_options.add_session_config_entry("session.use_mmap_prefix", "1")
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
 
-        # Low-level graph optimization only (prevents memory spikes during startup)
-        sess_options.graph_optimization_level = (
-            ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
-        )
-
-        print(f"🚀 [FINAL FIX] Loading Target Model (Arena Disabled)...")
+        print(f"🚀 [INIT] Loading Target Model into RAM/Mmap...")
         self.target_sess = ort.InferenceSession(
             self.target_path, sess_options, providers=["CPUExecutionProvider"]
         )
 
-        # Detect Architecture
-        self.target_layers = (
-            sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name)
-            // 2
-        )
-        t_kv = next(
-            x
-            for x in self.target_sess.get_inputs()
-            if "past_key_values.0.key" in x.name
-        )
+        # 4. Architecture Detection
+        self.target_layers = sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name) // 2
+        t_kv = next(x for x in self.target_sess.get_inputs() if "past_key_values.0.key" in x.name)
         self.target_heads = t_kv.shape[1]
 
-        print(f"✅ Engine Ready | Arena: Disabled | Stability: Max")
+        print(f"✅ [ENGINE] Speculative Engine Online.")
 
     def _get_target_logits(self, input_ids):
         attention_mask = np.ones(input_ids.shape, dtype=np.int64)
         input_feed = {
             "input_ids": input_ids.astype(np.int64),
             "attention_mask": attention_mask,
-            "position_ids": np.arange(input_ids.shape[1])
-            .reshape(1, -1)
-            .astype(np.int64),
+            "position_ids": np.arange(input_ids.shape[1]).reshape(1, -1).astype(np.int64)
         }
-
-        # Initialize KV-Caches with tiny allocations
         for i in range(self.target_layers):
-            input_feed[f"past_key_values.{i}.key"] = np.zeros(
-                (1, self.target_heads, 0, 64), dtype=np.float32
-            )
-            input_feed[f"past_key_values.{i}.value"] = np.zeros(
-                (1, self.target_heads, 0, 64), dtype=np.float32
-            )
+            input_feed[f"past_key_values.{i}.key"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
+            input_feed[f"past_key_values.{i}.value"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
 
         return self.target_sess.run(None, input_feed)[0]
 
@@ -88,11 +68,10 @@ class SpeculativeEngine:
 
         while (input_ids.shape[1] - initial_len) < max_new_tokens:
             prefix_len = input_ids.shape[1]
-
-            # Heuristic speculation (K tokens)
-            draft_ids = input_ids.copy()
+            
+            # Heuristic Draft (K tokens)
             proposal = np.repeat(input_ids[:, -1:], K, axis=1)
-            draft_ids = np.concatenate([draft_ids, proposal], axis=-1)
+            draft_ids = np.concatenate([input_ids, proposal], axis=-1)
 
             # Verification
             target_logits = self._get_target_logits(draft_ids)
@@ -115,7 +94,4 @@ class SpeculativeEngine:
 
         metrics.end_time = time.time()
         metrics.total_tokens = input_ids.shape[1] - initial_len
-        return (
-            self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
-            metrics.report(),
-        )
+        return self.tokenizer.decode(input_ids[0], skip_special_tokens=True), metrics.report()
