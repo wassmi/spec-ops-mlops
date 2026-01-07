@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 8888
 
 # Run the server
-CMD ["python", "src/main.py"]
+CMD ["python", "-m", "src.main"]
