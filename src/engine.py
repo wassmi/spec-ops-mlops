@@ -6,13 +6,15 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 from src.metrics import SessionMetrics
 
+
 class SpeculativeEngine:
     def __init__(self, tokenizer_id, repo_id="wassmi/spec-ops-phi3-onnx"):
         # 1. Path Setup
-        self.target_path = os.path.join(os.getcwd(), "models/target/model_quantized.onnx")
+        self.target_path = os.path.join(
+            os.getcwd(), "models/target/model_quantized.onnx"
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_id, 
-            revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6"
+            tokenizer_id, revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6"
         )
 
         # 2. Registry Check (The CI Fix)
@@ -23,7 +25,7 @@ class SpeculativeEngine:
                 repo_id=repo_id,
                 filename="model_quantized.onnx",
                 local_dir=os.path.dirname(self.target_path),
-                local_dir_use_symlinks=False
+                local_dir_use_symlinks=False,
             )
             print("✅ [REGISTRY] Download complete.")
 
@@ -33,7 +35,9 @@ class SpeculativeEngine:
         sess_options.inter_op_num_threads = 1
         sess_options.add_session_config_entry("session.enable_cpu_mem_arena", "0")
         sess_options.add_session_config_entry("session.use_mmap_prefix", "1")
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        sess_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        )
 
         print(f"🚀 [INIT] Loading Target Model into RAM/Mmap...")
         self.target_sess = ort.InferenceSession(
@@ -41,8 +45,15 @@ class SpeculativeEngine:
         )
 
         # 4. Architecture Detection
-        self.target_layers = sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name) // 2
-        t_kv = next(x for x in self.target_sess.get_inputs() if "past_key_values.0.key" in x.name)
+        self.target_layers = (
+            sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name)
+            // 2
+        )
+        t_kv = next(
+            x
+            for x in self.target_sess.get_inputs()
+            if "past_key_values.0.key" in x.name
+        )
         self.target_heads = t_kv.shape[1]
 
         print(f"✅ [ENGINE] Speculative Engine Online.")
@@ -52,11 +63,17 @@ class SpeculativeEngine:
         input_feed = {
             "input_ids": input_ids.astype(np.int64),
             "attention_mask": attention_mask,
-            "position_ids": np.arange(input_ids.shape[1]).reshape(1, -1).astype(np.int64)
+            "position_ids": np.arange(input_ids.shape[1])
+            .reshape(1, -1)
+            .astype(np.int64),
         }
         for i in range(self.target_layers):
-            input_feed[f"past_key_values.{i}.key"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
-            input_feed[f"past_key_values.{i}.value"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
+            input_feed[f"past_key_values.{i}.key"] = np.zeros(
+                (1, self.target_heads, 0, 64), dtype=np.float32
+            )
+            input_feed[f"past_key_values.{i}.value"] = np.zeros(
+                (1, self.target_heads, 0, 64), dtype=np.float32
+            )
 
         return self.target_sess.run(None, input_feed)[0]
 
@@ -68,7 +85,7 @@ class SpeculativeEngine:
 
         while (input_ids.shape[1] - initial_len) < max_new_tokens:
             prefix_len = input_ids.shape[1]
-            
+
             # Heuristic Draft (K tokens)
             proposal = np.repeat(input_ids[:, -1:], K, axis=1)
             draft_ids = np.concatenate([input_ids, proposal], axis=-1)
@@ -94,4 +111,7 @@ class SpeculativeEngine:
 
         metrics.end_time = time.time()
         metrics.total_tokens = input_ids.shape[1] - initial_len
-        return self.tokenizer.decode(input_ids[0], skip_special_tokens=True), metrics.report()
+        return (
+            self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
+            metrics.report(),
+        )
