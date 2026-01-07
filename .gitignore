@@ -1,4 +1,21 @@
-.venv/
+# Models (Crucial: do not push these!)
+models/
+*.onnx
+*.onnx_data
+
+# Python
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Docker
+.dockerignore
+
+# IDEs
+.vscode/
+.cursor/
+
+# Hugging Face Cache
+.cache/

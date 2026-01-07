@@ -1,8 +1,5 @@
-optimum[onnxruntime]
-transformers>=4.37.0
-torch
-onnxruntime>=1.17.0
+onnxruntime
+transformers
+numpy
 fastapi
 uvicorn
-prometheus-client
-numpy

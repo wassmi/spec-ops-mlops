@@ -1,80 +1,98 @@
+import logging
 import time
-from contextlib import asynccontextmanager
+import traceback
+import gc
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from engine import SpeculativeEngine
+from pydantic import BaseModel
+from src.engine import SpeculativeEngine
 
-# 1. This dictionary will hold our "warm" models in memory
-ml_models = {}
+# 1. Setup Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("SpecOps-API")
 
-# 2. LIFESPAN: This is the "Pro" way to handle setup/teardown
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- STARTUP ---
-    print("🤖 [STARTUP] Initializing Speculative Engine...")
-    start_time = time.time()
-    
-    # Load once and store in our global dictionary
-    ml_models["engine"] = SpeculativeEngine(
-        target_path="models/target/model_quantized.onnx",
-        draft_path="models/draft/model_quantized.onnx",
-        tokenizer_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    )
-    
-    end_time = time.time()
-    print(f"✅ [STARTUP] Models loaded in {end_time - start_time:.2f} seconds.")
-    
-    yield  # The API is now "live" and accepting requests
-    
-    # --- SHUTDOWN ---
-    print("♻️ [SHUTDOWN] Clearing models from RAM...")
-    ml_models.clear()
-
-# 3. Initialize FastAPI with the lifespan handler
 app = FastAPI(
-    title="Spec-Ops LLM API",
-    description="Optimized Speculative Inference Service",
-    lifespan=lifespan
+    title="Spec-Ops Speculative Inference API",
+    version="1.0.0"
 )
 
-# 4. Request Schema (Using Pydantic for validation)
-class GenerateRequest(BaseModel):
-    prompt: str = Field(..., example="The secret to MLOps is")
-    max_tokens: int = Field(default=40, ge=1, le=200)
-    k: int = Field(default=3, ge=1, le=5) # K tokens to speculate
+# Global engine variable
+engine = None
+
+# --- Data Models for FastAPI ---
+class Query(BaseModel):
+    prompt: str
+    max_new_tokens: int = 15
+    temperature: float = 0.7
+
+class PredictionResponse(BaseModel):
+    generated_text: str
+    time_taken_ms: float
+    tokens_per_second: float
+    status: str
+
+# --- Endpoints ---
 
 @app.get("/health")
-def health():
-    # Only returns healthy if the engine is actually in memory
-    status = "ready" if "engine" in ml_models else "loading"
-    return {"status": status, "engine": "TinyLlama-1.1B-Speculative"}
+async def health():
+    """Verify the API and Model status."""
+    return {
+        "status": "online",
+        "engine_loaded": engine is not None
+    }
 
-@app.post("/generate")
-async def generate(request: GenerateRequest):
-    if "engine" not in ml_models:
-        raise HTTPException(status_code=503, detail="Model not loaded yet")
+@app.post("/generate", response_model=PredictionResponse)
+async def generate(query: Query):
+    global engine
     
+    # 2. Lazy Loading Logic (Initializes on first request)
+    if engine is None:
+        logger.info("🤖 [INIT] Loading ONNX Models into RAM (Target + Draft)...")
+        try:
+            start_load = time.time()
+            engine = SpeculativeEngine(
+                "/app/models/target/model_quantized.onnx",
+                "/app/models/draft/model_quantized.onnx",
+                "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            ) 
+            logger.info(f"✅ [INIT] Models loaded in {time.time() - start_load:.2f}s")
+        except Exception as e:
+            logger.error(f"❌ [INIT] Failed: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail="Model engine failed to load.")
+
+    # 3. Inference Logic
     try:
-        # Record inference time for "Ops" monitoring
-        start_inf = time.time()
+        start_time = time.time()
         
-        response_text = ml_models["engine"].generate(
-            prompt=request.prompt,
-            max_new_tokens=request.max_tokens,
-            K=request.k
-        )
+        # Safety cap on tokens to prevent OOM
+        safe_limit = min(query.max_new_tokens, 25)
         
-        duration = time.time() - start_inf
+        # Execute speculative generation
+        result_text = engine.generate(query.prompt, max_new_tokens=safe_limit)
+        
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        
+        # Calculate performance metrics
+        word_count = len(result_text.split())
+        est_tokens = max(word_count * 1.3, 1) # Rough estimation for LLM tokens
+        tps = est_tokens / max((end_time - start_time), 0.001)
+
+        # Return matching the PredictionResponse schema
         return {
-            "response": response_text,
-            "latency_seconds": round(duration, 4),
-            "tokens_requested": request.max_tokens
+            "generated_text": result_text,
+            "time_taken_ms": round(duration_ms, 2),
+            "tokens_per_second": round(tps, 2),
+            "status": "success"
         }
+
     except Exception as e:
-        print(f"❌ Error during generation: {e}")
-        raise HTTPException(status_code=500, detail="Internal inference error")
+        logger.error(f"❌ [RUNTIME] Inference failed:\n{traceback.format_exc()}")
+        gc.collect() # Clean up what we can
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    # Use 0.0.0.0 so it's accessible from outside the Docker container
     uvicorn.run(app, host="0.0.0.0", port=8000)
