@@ -5,7 +5,7 @@ import gc
 import psutil
 import os
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.engine import SpeculativeEngine
 
 # 1. Setup Logging
@@ -25,7 +25,7 @@ class Query(BaseModel):
     prompt: str
     max_new_tokens: int = 15
     temperature: float = 0.7
-    k_draft: int = 3
+    k_draft: int = Field(default=3, ge=1, le=5)
 
 
 class PredictionResponse(BaseModel):

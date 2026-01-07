@@ -85,7 +85,7 @@ class SpeculativeEngine:
 
         return session.run(None, input_feed)[0]
 
-    def generate(self, prompt, max_new_tokens=15, K=3):
+    def generate(self, prompt, max_new_tokens=15, K=1):
         metrics = SessionMetrics()
         input_ids = self.tokenizer.encode(prompt, return_tensors="np")
         metrics.start_time = time.time()
@@ -124,6 +124,7 @@ class SpeculativeEngine:
                         break
 
                 metrics.acceptance_records.append(n_matches)
+                print(f"DEBUG: Draft proposed {K}, Target accepted {n_matches}")
 
                 # 4. Update Sequence
                 # We take the accepted tokens plus the one correction token from the target

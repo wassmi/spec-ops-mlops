@@ -56,3 +56,13 @@ docker run -d -p 8000:8000 --name speculative-api --memory="4g" spec-ops-api
 ```
 
 
+
+## 🏆 Final Optimization Discovery
+After hyperparameter tuning on a 2-core (nproc=2) environment, I have identified the optimal configuration for this engine:
+
+| Metric | K=3 (Aggressive) | K=1 (Balanced) | Improvement |
+| :--- | :--- | :--- | :--- |
+| **Throughput** | 2.35 TPS | **3.13 TPS** | **+33%** |
+| **CPU Load** | 54.1% | ~48.0% | 🟢 More Efficient |
+
+**Key Finding:** For the TinyLlama-1.1B (Target) and Llama-160M (Draft) pair on dual-core hardware, a smaller speculation window (=1$) provides the most stable and highest throughput by minimizing "discarded" token computations.
