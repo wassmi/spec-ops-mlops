@@ -1,5 +1,10 @@
 # SpecOps Inference Engine (V1)
 
+[![Pipeline Status](https://github.com/wassmi/spec-ops-mlops/actions/workflows/pipeline.yml/badge.svg)](https://github.com/wassmi/spec-ops-mlops/actions)
+[![Registry](https://img.shields.io/badge/Container-GHCR-blue?logo=docker&logoColor=white)](https://github.com/wassmi/spec-ops-mlops/pkgs/container/spec-ops-mlops)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
 Low-latency inference service for speculative decoding using ONNX Runtime. This service is designed to run as a sidecar or standalone microservice in a Kubernetes cluster.
 
 ## System Specifications
