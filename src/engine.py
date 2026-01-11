@@ -6,23 +6,30 @@ from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
 from src.metrics import SessionMetrics
 
+
 class SpeculativeEngine:
     def __init__(self, tokenizer_id=None, repo_id=None):
         # 1. Configuration - Priority: Constructor Arg > Environment Variable > Default
-        self.repo_id = repo_id or os.getenv("MODEL_REPO_ID", "wassmi/spec-ops-phi3-onnx")
-        self.tokenizer_id = tokenizer_id or os.getenv("TOKENIZER_ID", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+        self.repo_id = repo_id or os.getenv(
+            "MODEL_REPO_ID", "wassmi/spec-ops-phi3-onnx"
+        )
+        self.tokenizer_id = tokenizer_id or os.getenv(
+            "TOKENIZER_ID", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        )
         self.revision = os.getenv("MODEL_REVISION", "main")
-        
+
         # 2. Path Setup
         # We use a subfolder based on the revision to allow side-by-side versions if needed
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.target_path = os.path.join(base_dir, "models", "target", "model_quantized.onnx")
+        self.target_path = os.path.join(
+            base_dir, "models", "target", "model_quantized.onnx"
+        )
 
         # Load tokenizer
         print(f"📦 [INIT] Loading Tokenizer: {self.tokenizer_id}")
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.tokenizer_id, 
-            revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6" # Pinned for heuristic stability
+            self.tokenizer_id,
+            revision="fe8a4ea1ffedaf415f4da2f062534de366a451e6",  # Pinned for heuristic stability
         )
 
         # 3. Model Registry / HF Download
@@ -35,17 +42,19 @@ class SpeculativeEngine:
                     repo_id=self.repo_id,
                     revision=self.revision,
                     # CHANGE THIS LINE BELOW to include 'target/' folder
-                    filename="target/model_quantized.onnx", 
+                    filename="target/model_quantized.onnx",
                     local_dir=os.path.dirname(self.target_path),
                     local_dir_use_symlinks=False,
                     token=os.getenv("HF_TOKEN"),
                 )
-                
-                # IMPORTANT: Since we downloaded to a subfolder, 
+
+                # IMPORTANT: Since we downloaded to a subfolder,
                 # we move the file to where the engine expects it
-                downloaded_file = os.path.join(os.path.dirname(self.target_path), "target", "model_quantized.onnx")
+                downloaded_file = os.path.join(
+                    os.path.dirname(self.target_path), "target", "model_quantized.onnx"
+                )
                 os.rename(downloaded_file, self.target_path)
-                
+
                 print("✅ [REGISTRY] Download complete.")
             except Exception as e:
                 print(f"❌ [REGISTRY] Error downloading model: {e}")
@@ -57,18 +66,25 @@ class SpeculativeEngine:
         sess_options.inter_op_num_threads = 1
         sess_options.add_session_config_entry("session.enable_cpu_mem_arena", "0")
         sess_options.add_session_config_entry("session.use_mmap_prefix", "1")
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        sess_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+        )
 
         print(f"🚀 [INIT] Loading ONNX Session from {self.target_path}")
         self.target_sess = ort.InferenceSession(
-            self.target_path, 
-            sess_options, 
-            providers=["CPUExecutionProvider"]
+            self.target_path, sess_options, providers=["CPUExecutionProvider"]
         )
 
         # 5. Architecture Detection
-        self.target_layers = sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name) // 2
-        t_kv = next(x for x in self.target_sess.get_inputs() if "past_key_values.0.key" in x.name)
+        self.target_layers = (
+            sum(1 for x in self.target_sess.get_inputs() if "past_key_values" in x.name)
+            // 2
+        )
+        t_kv = next(
+            x
+            for x in self.target_sess.get_inputs()
+            if "past_key_values.0.key" in x.name
+        )
         self.target_heads = t_kv.shape[1]
 
         print(f"✅ [ENGINE] Online. Version: {self.repo_id} @ {self.revision}")
@@ -79,12 +95,18 @@ class SpeculativeEngine:
         input_feed = {
             "input_ids": input_ids.astype(np.int64),
             "attention_mask": attention_mask,
-            "position_ids": np.arange(input_ids.shape[1]).reshape(1, -1).astype(np.int64),
+            "position_ids": np.arange(input_ids.shape[1])
+            .reshape(1, -1)
+            .astype(np.int64),
         }
         # Initialize empty KV caches for the single pass logic
         for i in range(self.target_layers):
-            input_feed[f"past_key_values.{i}.key"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
-            input_feed[f"past_key_values.{i}.value"] = np.zeros((1, self.target_heads, 0, 64), dtype=np.float32)
+            input_feed[f"past_key_values.{i}.key"] = np.zeros(
+                (1, self.target_heads, 0, 64), dtype=np.float32
+            )
+            input_feed[f"past_key_values.{i}.value"] = np.zeros(
+                (1, self.target_heads, 0, 64), dtype=np.float32
+            )
 
         return self.target_sess.run(None, input_feed)[0]
 
@@ -102,12 +124,14 @@ class SpeculativeEngine:
             last_token = input_ids[0, -1]
             past_tokens = input_ids[0, :-1]
             indices = np.where(past_tokens == last_token)[0]
-            
+
             if len(indices) > 0:
                 match_idx = indices[-1] + 1
                 proposal = input_ids[:, match_idx : match_idx + K]
                 if proposal.shape[1] < K:
-                    padding = np.repeat(input_ids[:, -1:], K - proposal.shape[1], axis=1)
+                    padding = np.repeat(
+                        input_ids[:, -1:], K - proposal.shape[1], axis=1
+                    )
                     proposal = np.concatenate([proposal, padding], axis=1)
             else:
                 proposal = np.repeat(input_ids[:, -1:], K, axis=1)
@@ -137,7 +161,7 @@ class SpeculativeEngine:
 
         metrics.end_time = time.time()
         metrics.total_tokens = input_ids.shape[1] - initial_len
-        
+
         return (
             self.tokenizer.decode(input_ids[0], skip_special_tokens=True),
             metrics.report(),

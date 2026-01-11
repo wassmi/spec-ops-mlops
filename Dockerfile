@@ -1,26 +1,33 @@
+# Stage 1: Builder
+FROM python:3.11-slim as builder
+
+WORKDIR /build
+COPY requirements.txt .
+
+# Install build dependencies and generate wheels
+RUN apt-get update && apt-get install -y gcc g++ \
+    && pip wheel --no-cache-dir --wheel-dir /build/wheels -r requirements.txt
+
+# Stage 2: Runtime
 FROM python:3.11-slim
 
-# 1. Install system dependencies first (Top of file = Better Caching)
-# We combine update and install into one RUN to keep the image small
-RUN apt-get update && apt-get install -y \
-    curl \
-    jq \
-    bc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory
 WORKDIR /app
 
-# 2. Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install huggingface_hub
+# Install runtime utilities
+RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy the rest of the application
+# Copy wheels from builder and install
+COPY --from=builder /build/wheels /wheels
+RUN pip install --no-cache-dir /wheels/*
+
+# Copy application code
 COPY . .
 
-# Expose the port FastAPI runs on
+# Performance Hardening for CPU
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV HF_HUB_ENABLE_HF_TRANSFER=1 
+
 EXPOSE 8888
 
-# Run the server
 CMD ["python", "-m", "src.main"]

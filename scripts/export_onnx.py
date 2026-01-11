@@ -6,17 +6,18 @@ from huggingface_hub import hf_hub_download
 MODELS = {
     "target": {
         "repo": "Xenova/TinyLlama-1.1B-Chat-v1.0",
-        "file": "onnx/model_quantized.onnx"
+        "file": "onnx/model_quantized.onnx",
     },
     "draft": {
         "repo": "onnx-community/Llama-160M-Chat-v1-ONNX",
-        "file": "onnx/decoder_model_merged_int8.onnx"
-    }
+        "file": "onnx/decoder_model_merged_int8.onnx",
+    },
 }
+
 
 def setup_models():
     base_dir = Path("models")
-    
+
     for folder, info in MODELS.items():
         target_dir = base_dir / folder
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -30,15 +31,14 @@ def setup_models():
         try:
             # Download specific file to temporary location
             downloaded_path = hf_hub_download(
-                repo_id=info['repo'],
-                filename=info['file'],
-                local_dir=target_dir
+                repo_id=info["repo"], filename=info["file"], local_dir=target_dir
             )
             # Rename to our standardized name: model_quantized.onnx
             os.rename(downloaded_path, final_path)
             print(f"✨ Successfully prepared {folder} model.")
         except Exception as e:
             print(f"❌ Error downloading {folder}: {e}")
+
 
 if __name__ == "__main__":
     setup_models()
