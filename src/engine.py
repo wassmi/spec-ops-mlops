@@ -27,18 +27,25 @@ class SpeculativeEngine:
 
         # 3. Model Registry / HF Download
         if not os.path.exists(self.target_path):
-            print(f"📥 [REGISTRY] Weights missing. Downloading {self.repo_id}@{self.revision}...")
+            print(f"📥 [REGISTRY] Weights missing. Downloading {self.repo_id}...")
             os.makedirs(os.path.dirname(self.target_path), exist_ok=True)
 
             try:
                 hf_hub_download(
                     repo_id=self.repo_id,
                     revision=self.revision,
-                    filename="model_quantized.onnx",
+                    # CHANGE THIS LINE BELOW to include 'target/' folder
+                    filename="target/model_quantized.onnx", 
                     local_dir=os.path.dirname(self.target_path),
                     local_dir_use_symlinks=False,
                     token=os.getenv("HF_TOKEN"),
                 )
+                
+                # IMPORTANT: Since we downloaded to a subfolder, 
+                # we move the file to where the engine expects it
+                downloaded_file = os.path.join(os.path.dirname(self.target_path), "target", "model_quantized.onnx")
+                os.rename(downloaded_file, self.target_path)
+                
                 print("✅ [REGISTRY] Download complete.")
             except Exception as e:
                 print(f"❌ [REGISTRY] Error downloading model: {e}")
