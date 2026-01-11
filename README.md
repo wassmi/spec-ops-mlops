@@ -9,9 +9,11 @@ Low-latency inference service for speculative decoding using ONNX Runtime. This 
 
 ## System Specifications
 - **Target Model:** Phi-3-Mini-4k-Instruct (ONNX, Int4 Quantized)
-- **Draft Model:** TinyLlama-1.1B-Chat-v1.0 (ONNX, FP32)
-- **Runtime:** ONNX Runtime (CPU-optimized)
+- **Draft Model:** THeuristic Lookback (Matching patterns in current context)
+- **Logic**: It searches for the last_token in the past_tokens and proposes the subsequent sequence.
+- **Runtime:** ONNX Runtime (CPU-optimized with mmap and disabled Arena allocator)
 - **API Framework:** FastAPI / Uvicorn (Asynchronous)
+
 
 ## Infrastructure & Lifecycle
 This repository follows GitOps principles. The state of the production environment is defined by the infra/ manifests.
@@ -67,8 +69,11 @@ Exposes Prometheus-formatted telemetry.
 
 ### Model Weight Updates
 
-Modify the tokenizer_id or model_id in main.py. The background thread handles the registry sync on container startup.
+- **Non-Blocking Boot**: The FastAPI app starts immediately to bind to port 8888. This prevents "Connection Refused" errors during CI/CD or K8s startup.
 
+- **Background Initialization**: A threading.Thread handles the Hugging Face Hub download and ONNX session instantiation.
+
+- **Readiness**: The /health endpoint tracks engine_ready, which only flips to True once the weights are moved and the session is live.
 ### Local Development
 
 ```bash
