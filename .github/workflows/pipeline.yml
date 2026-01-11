@@ -1,0 +1,53 @@
+name: SpecOps MLOps Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          # We install the CPU version specifically for the runner
+          pip install onnxruntime 
+
+      - name: Run Heuristic Benchmark
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PYTHONPATH: .
+        run: python3 scripts/ci_benchmark.py
+
+  # This part only runs if the Benchmark passes
+  build-and-push:
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest

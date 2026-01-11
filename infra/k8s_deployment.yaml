@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spec-ops-api
+spec:
+  replicas: 1 
+  selector:
+    matchLabels:
+      app: spec-ops
+  template:
+    metadata:
+      labels:
+        app: spec-ops
+    spec:
+      containers:
+      - name: engine
+        image: ghcr.io/wassmi/spec-ops-mlops:latest
+        ports:
+        - containerPort: 8888
+        env:
+        - name: OMP_NUM_THREADS
+          value: "1"
+        resources:
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+          requests:
+            cpu: "1"
+            memory: "2Gi"
