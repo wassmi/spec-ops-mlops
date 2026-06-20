@@ -60,16 +60,16 @@ class Query(BaseModel):
 @app.get("/health")
 async def health(response: Response):  # 1. We hand the response tool to our function
     """Endpoint for CI/CD and monitoring to check readiness."""
-    
+
     if engine_instance is None:
         # 2. If the engine isn't built yet, we flip the status code to 503!
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {
             "status": "offline",
             "engine_ready": False,
-            "mode": "Do not send traffic yet!"
+            "mode": "Do not send traffic yet!",
         }
-    
+
     # 3. Otherwise, Python skips the IF block and runs this (defaulting to 200 OK)
     return {
         "status": "online",
