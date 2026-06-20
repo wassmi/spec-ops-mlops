@@ -12,9 +12,19 @@ spec:
       labels:
         app: spec-ops
     spec:
+      initContainers:
+      - name: model-downloader
+        image: alpine/git
+        command: ["sh", "-c", "git clone https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0 /data/model"]
+        volumeMounts:
+        - name: model-storage
+          mountPath: /data
       containers:
       - name: engine
         image: ghcr.io/wassmi/spec-ops-serving:latest
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
         ports:
         - containerPort: 8888
         readinessProbe:
@@ -39,3 +49,6 @@ spec:
           requests:
             cpu: "1"
             memory: "2Gi"
+      volumes:
+      - name: model-storage
+        emptyDir: {}
