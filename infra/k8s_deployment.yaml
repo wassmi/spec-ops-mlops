@@ -15,7 +15,10 @@ spec:
       initContainers:
       - name: model-downloader
         image: alpine/git
-        command: ["sh", "-c", "git clone https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0 /data/model"]
+        env:
+        -name: MODEL_REPO
+        value: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        command: ["sh", "-c", "git clone https://huggingface.co/$MODEL_REPO /data/model"]
         volumeMounts:
         - name: model-storage
           mountPath: /data

@@ -1,4 +1,5 @@
 import time
+import os
 import logging
 import threading
 from fastapi import FastAPI, HTTPException, Response
@@ -36,7 +37,9 @@ def load_engine_background():
     try:
         logger.info("🤖 [BOOT] Starting background engine initialization...")
         engine_instance = SpeculativeEngine(
-            tokenizer_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            tokenizer_id=os.environ.get(
+                "MODEL_REPO", "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            )
         )
         logger.info("✅ [BOOT] Engine is now ONLINE and ready for requests.")
     except Exception as e:
