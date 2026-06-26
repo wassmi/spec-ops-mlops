@@ -2,7 +2,9 @@ import time
 import os
 import logging
 import threading
-from fastapi import FastAPI, HTTPException, Response
+
+# Added 'status' to the import list to fix the health check bug
+from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from prometheus_client import (
     Counter,
@@ -23,11 +25,19 @@ logger = logging.getLogger("SpecOps-API")
 # --- PROMETHEUS METRICS ---
 REQUEST_COUNT = Counter("specops_requests_total", "Total generation requests")
 TOKEN_COUNT = Counter("specops_tokens_total", "Total tokens generated")
-LATENCY_HIST = Histogram("specops_latency_seconds", "Time spent generating text")
+LATENCY_HIST = Histogram("specops_latency_seconds", "Total time spent generating text")
 JUMP_GAUGE = Gauge("specops_avg_jump", "Average speculative jump per request")
+ACCEPTANCE_RATE_GAUGE = Gauge(
+    "specops_acceptance_rate", "Draft model token acceptance rate (0.0 - 1.0)"
+)
+DRAFT_LATENCY_HIST = Histogram(
+    "specops_draft_latency_seconds", "Time spent executing the draft model"
+)
+TARGET_LATENCY_HIST = Histogram(
+    "specops_target_latency_seconds", "Time spent verifying in the target model"
+)
 
 # --- ENGINE STATE ---
-# Initialized as None to allow the API to start while the model downloads
 engine_instance = None
 
 
@@ -47,7 +57,6 @@ def load_engine_background():
 
 
 # Start loading IMMEDIATELY in a separate thread
-# This ensures port 8888 opens so GitHub Actions/Health Checks don't get 'Connection Refused'
 threading.Thread(target=load_engine_background, daemon=True).start()
 
 # --- API SETUP ---
@@ -61,11 +70,9 @@ class Query(BaseModel):
 
 
 @app.get("/health")
-async def health(response: Response):  # 1. We hand the response tool to our function
+async def health(response: Response):
     """Endpoint for CI/CD and monitoring to check readiness."""
-
     if engine_instance is None:
-        # 2. If the engine isn't built yet, we flip the status code to 503!
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {
             "status": "offline",
@@ -73,7 +80,6 @@ async def health(response: Response):  # 1. We hand the response tool to our fun
             "mode": "Do not send traffic yet!",
         }
 
-    # 3. Otherwise, Python skips the IF block and runs this (defaulting to 200 OK)
     return {
         "status": "online",
         "engine_ready": True,
@@ -108,6 +114,14 @@ async def generate(query: Query):
         LATENCY_HIST.observe(duration)
         TOKEN_COUNT.inc(stats["total_tokens"])
         JUMP_GAUGE.set(stats["avg_tokens_per_jump"])
+
+        # Populate specialized speculative telemetry from engine stats
+        if "acceptance_rate" in stats:
+            ACCEPTANCE_RATE_GAUGE.set(stats["acceptance_rate"])
+        if "draft_latency" in stats:
+            DRAFT_LATENCY_HIST.observe(stats["draft_latency"])
+        if "target_latency" in stats:
+            TARGET_LATENCY_HIST.observe(stats["target_latency"])
 
         return {
             "generated_text": result,

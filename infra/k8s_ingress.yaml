@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: specops-ingress
+  namespace: default
+  annotations:
+    # Tells Kubernetes to use the standard Nginx controller to handle the traffic
+    kubernetes.io/ingress.class: "nginx"
+    # Essential for LLM streaming endpoints: prevents timeouts during long responses
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Enables client-side response streaming without buffering chunks
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            # Matches the exact name of the Service exposing your FastAPI app
+            name: specops-service
+            port:
+              number: 8888
